@@ -80,6 +80,20 @@ test_transforms = transforms.Compose([
 
 """See how to get separate validations dataset"""
 
+def train(model, device, train_loader, optimizer, criterion):
+    model.train()
+    pbar = tqdm(train_loader, desc='Training')
+    for batch_idx, (data, target) in enumerate(pbar):
+        data, target = data.to(device), target.to(device)
+        optimizer.zero_grad()
+        output = model(data)
+        loss = criterion(output, target)
+        loss.backward()
+        optimizer.step()
+        
+        # Update progress bar description with the current loss
+        pbar.set_description(f'Training - Loss: {loss.item():.4f}')
+
 if __name__ == '__main__':
     train_data = datasets.MNIST('../data', train=True, download=True, transform=train_transforms)
     test_data = datasets.MNIST('../data', train=False, download=True, transform=test_transforms)
@@ -107,26 +121,33 @@ if __name__ == '__main__':
 
     model = Net().to(device)
     total_params = sum(p.numel() for p in model.parameters())
-    optimizer = optim.SGD(model.parameters(), lr=0.01, momentum=0.9)
-    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=15, gamma=0.1, verbose=True)
+    optimizer = optim.Adam(model.parameters(), lr=0.001)
+    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=15, gamma=0.1)
     criterion = nn.CrossEntropyLoss()
-    num_epochs = 20
+    num_epochs = 19
     best_acc = 0.0
 
     for epoch in range(1, num_epochs+1):
         print(f'Epoch {epoch}')
+        print(f'Learning rate: {scheduler.get_last_lr()[0]}')
         train(model, device, train_loader, optimizer, criterion)
         test_acc = test(model, device, test_loader, criterion)
         scheduler.step()
         
-        if test_acc >= 99.4:
-            print(f"Target accuracy reached at epoch {epoch}!")
-            torch.save(model.state_dict(), 'best_model.pt')
-            save_model_metrics(test_acc, epoch, total_params)
-            break
-        elif test_acc > best_acc:
-            best_acc = test_acc
-            torch.save(model.state_dict(), 'best_model.pt')
+        try:
+            if test_acc is not None:
+                if test_acc >= 99.4:
+                    print(f"Target accuracy reached at epoch {epoch}!")
+                    torch.save(model.state_dict(), 'best_model.pt')
+                    save_model_metrics(test_acc, epoch, total_params)
+                    break
+                elif test_acc > best_acc:
+                    best_acc = test_acc
+                    torch.save(model.state_dict(), 'best_model.pt')
+        except TypeError as e:
+            print(f"Error comparing accuracies: {e}")
+            print(f"test_acc: {test_acc}, type: {type(test_acc)}")
+            continue
 
     # Visualize predictions
     visualize_predictions(model, device, test_loader)
